@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { anthropic, COUNSELOR_SYSTEM_PROMPT } from "@/lib/anthropic";
