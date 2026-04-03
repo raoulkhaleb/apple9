@@ -1,0 +1,303 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  ADMIN
+  MEDIA_DIRECTOR
+}
+
+enum ApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  WAITLISTED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+  FAILED
+}
+
+enum VisaStatus {
+  SUBMITTED
+  DOCUMENTS_REQUIRED
+  PROCESSING
+  APPROVED
+  REJECTED
+  ON_WAITLIST
+}
+
+enum TransactionType {
+  COLLEGE_APP
+  VISA_SERVICE
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PartnershipType {
+  UNIVERSITY
+  AIRLINE
+  EMBASSY
+  SPONSOR
+  MEDIA
+}
+
+// ─── NextAuth Required Models ─────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Core Models ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  role          Role      @default(STUDENT)
+  emailVerified DateTime?
+  image         String?
+  phone         String?
+  nationality   String?
+  dateOfBirth   DateTime?
+  bio           String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts                Account[]
+  sessions                Session[]
+  applications            Application[]
+  scholarshipApplications ScholarshipApplication[]
+  visaRequests            VisaRequest[]
+  flightBookings          FlightBooking[]
+  sentMessages            Message[]                @relation("SentMessages")
+  receivedMessages        Message[]                @relation("ReceivedMessages")
+  transactions            Transaction[]
+}
+
+model College {
+  id                   String    @id @default(cuid())
+  name                 String    @unique
+  country              String
+  city                 String?
+  programs             String[]
+  tuitionMin           Float
+  tuitionMax           Float
+  scholarshipAvailable Boolean   @default(false)
+  description          String    @db.Text
+  logo                 String?
+  website              String?
+  ranking              Int?
+  acceptanceRate       Float?
+  applicationDeadline  DateTime?
+  featured             Boolean   @default(false)
+  active               Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  applications Application[]
+
+  @@index([country])
+  @@index([scholarshipAvailable])
+}
+
+model Application {
+  id                String            @id @default(cuid())
+  userId            String
+  collegeId         String
+  status            ApplicationStatus @default(PENDING)
+  paymentStatus     PaymentStatus     @default(UNPAID)
+  stripePaymentId   String?
+  stripeSessionId   String?
+  documents         String[]
+  personalStatement String?           @db.Text
+  notes             String?           @db.Text
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college College @relation(fields: [collegeId], references: [id])
+
+  @@unique([userId, collegeId])
+  @@index([status])
+  @@index([userId])
+}
+
+model ScholarshipProgram {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  amount      Float
+  currency    String   @default("USD")
+  deadline    DateTime
+  eligibility String   @db.Text
+  country     String?
+  description String   @db.Text
+  provider    String
+  website     String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  applications ScholarshipApplication[]
+
+  @@index([deadline])
+  @@index([country])
+}
+
+model ScholarshipApplication {
+  id            String            @id @default(cuid())
+  userId        String
+  scholarshipId String
+  status        ApplicationStatus @default(PENDING)
+  essay         String            @db.Text
+  documents     String[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scholarship ScholarshipProgram @relation(fields: [scholarshipId], references: [id])
+
+  @@unique([userId, scholarshipId])
+  @@index([status])
+}
+
+model VisaRequest {
+  id              String        @id @default(cuid())
+  userId          String
+  country         String
+  documentUrls    String[]
+  status          VisaStatus    @default(SUBMITTED)
+  paymentStatus   PaymentStatus @default(UNPAID)
+  stripePaymentId String?
+  stripeSessionId String?
+  notes           String?       @db.Text
+  userNotes       String?       @db.Text
+  onWaitlist      Boolean       @default(false)
+  waitlistPosition Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([userId])
+}
+
+model FlightBooking {
+  id          String    @id @default(cuid())
+  userId      String
+  origin      String
+  destination String
+  departDate  DateTime
+  returnDate  DateTime?
+  passengers  Int       @default(1)
+  status      String    @default("ENQUIRY")
+  externalRef String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Message {
+  id               String   @id @default(cuid())
+  senderId         String
+  receiverId       String?
+  subject          String
+  body             String   @db.Text
+  isRead           Boolean  @default(false)
+  isAdminBroadcast Boolean  @default(false)
+  parentMessageId  String?
+  createdAt        DateTime @default(now())
+
+  sender   User  @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User? @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: SetNull)
+
+  @@index([receiverId, isRead])
+  @@index([senderId])
+  @@index([isAdminBroadcast])
+}
+
+model Transaction {
+  id        String            @id @default(cuid())
+  userId    String
+  type      TransactionType
+  amount    Float
+  stripeId  String?           @unique
+  status    TransactionStatus @default(PENDING)
+  metadata  Json?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Partnership {
+  id           String          @id @default(cuid())
+  name         String
+  type         PartnershipType
+  contactEmail String?
+  description  String?         @db.Text
+  logo         String?
+  website      String?
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
